@@ -58,6 +58,8 @@ class CrossingEnv(MiniGridEnv):
         self.np_random.shuffle(path)
 
         # Create openings
+        self.openings_pos = []
+
         limits_v = [0] + rivers_v + [height - 1]
         limits_h = [0] + rivers_h + [width - 1]
         room_i, room_j = 0, 0
@@ -75,12 +77,91 @@ class CrossingEnv(MiniGridEnv):
             else:
                 assert False
             self.grid.set(i, j, None)
+            self.openings_pos.append((i, j))
 
+        print("openings_pos: {}".format(self.openings_pos))
         self.mission = (
             "avoid the lava and get to the green goal square"
             if self.obstacle_type == Lava
             else "find the opening and get to the green goal square"
         )
+    
+    # overwrite
+    def _reward(self):
+        """
+        Compute the reward to be given upon success
+        """
+
+        return 2 - 0.9 * (self.step_count / self.max_steps)
+
+    # overwrite
+    def step(self, action):
+        self.step_count += 1
+
+        reward = 0
+        done = False
+
+        # Get the position in front of the agent
+        fwd_pos = self.front_pos
+
+        # Get the contents of the cell in front of the agent
+        fwd_cell = self.grid.get(*fwd_pos)
+
+        # Rotate left
+        if action == self.actions.left:
+            self.agent_dir -= 1
+            if self.agent_dir < 0:
+                self.agent_dir += 4
+
+        # Rotate right
+        elif action == self.actions.right:
+            self.agent_dir = (self.agent_dir + 1) % 4
+
+        # Move forward
+        elif action == self.actions.forward:
+            if fwd_cell == None or fwd_cell.can_overlap():
+                self.agent_pos = fwd_pos
+            if fwd_cell != None and fwd_cell.type == 'goal':
+                done = True
+                reward = self._reward()
+            if fwd_cell != None and fwd_cell.type == 'lava':
+                done = True
+            if fwd_pos is in self.openings_pos:
+                reward = 1
+
+        # Pick up an object
+        elif action == self.actions.pickup:
+            if fwd_cell and fwd_cell.can_pickup():
+                if self.carrying is None:
+                    self.carrying = fwd_cell
+                    self.carrying.cur_pos = np.array([-1, -1])
+                    self.grid.set(*fwd_pos, None)
+
+        # Drop an object
+        elif action == self.actions.drop:
+            if not fwd_cell and self.carrying:
+                self.grid.set(*fwd_pos, self.carrying)
+                self.carrying.cur_pos = fwd_pos
+                self.carrying = None
+
+        # Toggle/activate an object
+        elif action == self.actions.toggle:
+            if fwd_cell:
+                fwd_cell.toggle(self, fwd_pos)
+
+        # Done action (not used by default)
+        elif action == self.actions.done:
+            pass
+
+        else:
+            assert False, "unknown action"
+
+        if self.step_count >= self.max_steps:
+            done = True
+
+        obs = self.gen_obs()
+
+        return obs, reward, done, {}
 
 class LavaCrossingEnv(CrossingEnv):
     def __init__(self):
