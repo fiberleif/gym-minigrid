@@ -126,7 +126,7 @@ class CrossingEnv(MiniGridEnv):
                 reward = self._reward()
             if fwd_cell != None and fwd_cell.type == 'lava':
                 done = True
-            if fwd_pos is in self.openings_pos:
+            if fwd_pos in self.openings_pos:
                 reward = 1
 
         # Pick up an object
